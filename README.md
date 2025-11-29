@@ -1,6 +1,37 @@
 This is Compose Multiplatform + Fluidsynth demo app targeting Android, iOS, Web, Desktop (JVM). Mostly vibe-coded.
 
-Currently only supports Android 
+## Platform Support
+
+Currently fully supports:
+- **Android** - Full FluidSynth integration with native C++ wrapper
+- **Web (WASM)** - Full FluidSynth integration using Emscripten build with js-synthesizer wrapper
+
+Prepared for (stub implementations):
+- **iOS** - Resources prepared, requires FluidSynth integration
+- **Desktop (JVM)** - Requires FluidSynth Java bindings
+- **Web (JS)** - Requires FluidSynth Emscripten integration
+
+## WASM Implementation
+
+The WASM target now has full FluidSynth support implemented using:
+- `libfluidsynth-2.4.6-with-libsndfile.js` - FluidSynth Emscripten build with libsndfile support
+- `sft_gu_gs.sf2` - SoundFont file (copied from Android resources)
+- Top-level `js()` declarations for JavaScript interop
+- External class declarations implementing the FluidSynth Synthesizer API
+- Promise-based async initialization using Kotlin coroutines
+
+Key implementation features:
+- Uses `@OptIn(ExperimentalWasmJsInterop::class)` for Kotlin/Wasm JS interop
+- Web Audio API integration via AudioWorkletNode
+- Proper suspend function handling without inline `js()` calls
+- Console logging for debugging initialization and playback
+
+To run:
+```bash
+.\gradlew.bat :composeApp:wasmJsBrowserDevelopmentRun
+```
+
+Then open http://localhost:8081/ in your browser.
 
 Default Compose readme below
 * [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
