@@ -30,15 +30,20 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          
+      
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/actions/setup-gradle@v4
       
       - name: Make gradlew executable
         run: chmod +x ./gradlew
+      
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
         
       - name: Build WASM
         run: ./gradlew :composeApp:wasmJsBrowserDistribution --no-daemon --stacktrace
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4096m"
         
       - name: Prepare deployment
         run: |
