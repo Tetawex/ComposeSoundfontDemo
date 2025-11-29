@@ -60,6 +60,7 @@ class WasmSynthManager : SynthManager {
     private var audioNode: AudioWorkletNode? = null
     private var isInit = false
     private val channel = 0
+    private var currentBufferSize: Int = getOptimalBufferSize()
     
     // Resume audio context if suspended (for browser autoplay policy)
     private fun resumeAudioContextIfNeeded() {
@@ -113,10 +114,9 @@ class WasmSynthManager : SynthManager {
             console.log("WasmSynthManager: Master gain set to ${synth.getGain()}")
             
             // Create audio node with optimized buffer size for low latency
-            val bufferSize = getOptimalBufferSize()
-            console.log("WasmSynthManager: Creating audio node with buffer size: $bufferSize")
+            console.log("WasmSynthManager: Creating audio node with buffer size: $currentBufferSize")
             val node = try {
-                synth.createAudioNode(audioContext, bufferSize)
+                synth.createAudioNode(audioContext, currentBufferSize)
             } catch (e: Throwable) {
                 console.error("WasmSynthManager: Failed to create audio node: ${e.message}")
                 throw e
@@ -188,6 +188,32 @@ class WasmSynthManager : SynthManager {
         }
     }
 
+    override fun setBufferSize(bufferSize: Int) {
+        if (!isInit) {
+            currentBufferSize = bufferSize
+            console.log("WasmSynthManager: Buffer size set to $bufferSize (will apply on initialization)")
+            return
+        }
+        
+        try {
+            val synth = synthesizer ?: return
+            console.log("WasmSynthManager: Changing buffer size from $currentBufferSize to $bufferSize")
+            
+            // Disconnect old audio node
+            audioNode?.disconnect()
+            
+            // Create new audio node with new buffer size
+            val node = synth.createAudioNode(audioContext, bufferSize)
+            node.connect(audioContext.destination)
+            
+            audioNode = node
+            currentBufferSize = bufferSize
+            console.log("WasmSynthManager: Buffer size changed successfully")
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error changing buffer size: ${e.message ?: "Unknown error"}")
+        }
+    }
+
     override fun isInitialized(): Boolean = isInit
 
     override fun cleanup() {
@@ -214,9 +240,10 @@ private fun isMobileDevice(): Boolean =
 // Get optimal buffer size based on device capabilities
 // Smaller buffer = lower latency but requires more CPU
 private fun getOptimalBufferSize(): Int {
+    return 512
     // Mobile devices: use 512 for stability
     // Desktop: use 256 for lower latency
-    return if (isMobileDevice()) 512 else 256
+    // return if (isMobileDevice()) 512 else 256
 }
 
 // Resume audio context asynchronously (fire and forget)

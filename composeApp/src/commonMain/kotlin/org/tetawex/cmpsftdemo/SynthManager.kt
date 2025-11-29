@@ -35,6 +35,13 @@ interface SynthManager {
     fun setVolume(volume: Int)
     
     /**
+     * Set the audio buffer size (WASM only, no-op on other platforms)
+     * @param bufferSize Buffer size in samples (e.g., 128, 256, 512, 1024)
+     * Lower values = lower latency but higher CPU usage
+     */
+    fun setBufferSize(bufferSize: Int)
+    
+    /**
      * Check if synth is initialized
      */
     fun isInitialized(): Boolean

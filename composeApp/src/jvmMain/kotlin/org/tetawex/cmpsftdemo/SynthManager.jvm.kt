@@ -25,6 +25,10 @@ class StubSynthManager : SynthManager {
         println("SynthManager: setVolume($volume) - not available on desktop")
     }
 
+    override fun setBufferSize(bufferSize: Int) {
+        println("SynthManager: setBufferSize($bufferSize) - not available on desktop")
+    }
+
     override fun isInitialized(): Boolean = false
 
     override fun cleanup() {

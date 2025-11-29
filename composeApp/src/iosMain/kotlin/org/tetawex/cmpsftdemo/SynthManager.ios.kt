@@ -14,6 +14,8 @@ class IOSSynthManager : SynthManager {
 
     override fun setVolume(volume: Int) {}
 
+    override fun setBufferSize(bufferSize: Int) {}
+
     override fun isInitialized(): Boolean = false
 
     override fun cleanup() {}

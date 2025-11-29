@@ -100,6 +100,10 @@ class AndroidSynthManager(private val context: Context) : SynthManager {
         }
     }
 
+    override fun setBufferSize(bufferSize: Int) {
+        // No-op on Android - buffer size is configured at native level
+    }
+
     override fun isInitialized(): Boolean = isInit
 
     override fun cleanup() {
