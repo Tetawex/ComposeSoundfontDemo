@@ -42,7 +42,7 @@ class AndroidSynthManager(private val context: Context) : SynthManager {
                 android.util.Log.i("SynthManager", "Current soundfont count: $sfCount")
                 
                 // Set master gain to a reasonable level for audio output
-                val gainResult = FluidSynthJNI.setMasterGain(synthHandle, 0.8f)
+                val gainResult = FluidSynthJNI.setMasterGain(synthHandle, 0.8)
                 val currentGain = FluidSynthJNI.getMasterGain(synthHandle)
                 android.util.Log.i("SynthManager", "Master gain set: result=$gainResult, current=$currentGain")
 

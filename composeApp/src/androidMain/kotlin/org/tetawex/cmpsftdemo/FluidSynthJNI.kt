@@ -80,26 +80,26 @@ object FluidSynthJNI {
     external fun getVersion(): String
     
     /**
-     * Get the number of loaded soundfonts in a synthesizer.
+     * Get the number of loaded SoundFonts.
      * @param synthHandle The synthesizer handle
-     * @return Number of loaded soundfonts
+     * @return Number of loaded SoundFonts
      */
     external fun getSoundFontCount(synthHandle: Long): Int
     
     /**
-     * Set the master gain (volume) for the synthesizer.
+     * Set the master gain (volume) of the synthesizer.
      * @param synthHandle The synthesizer handle
-     * @param gain Gain value (0.0f to 1.0f or higher)
+     * @param gain Master gain (0.0-1.0 typically, but can be higher)
      * @return FLUID_OK (0) on success, FLUID_FAILED (-1) on failure
      */
-    external fun setMasterGain(synthHandle: Long, gain: Float): Int
+    external fun setMasterGain(synthHandle: Long, gain: Double): Int
     
     /**
      * Get the current master gain (volume) of the synthesizer.
      * @param synthHandle The synthesizer handle
-     * @return Current gain value
+     * @return Master gain value
      */
-    external fun getMasterGain(synthHandle: Long): Float
+    external fun getMasterGain(synthHandle: Long): Double
     
 
         init {
