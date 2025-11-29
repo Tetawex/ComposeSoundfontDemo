@@ -2,13 +2,13 @@ This is Compose Multiplatform + Fluidsynth demo app targeting Android, iOS, Web,
 
 ## Platform Support
 
-Currently fully supports:
-- **Android** - Full FluidSynth integration with native C++ wrapper
-- **Web (WASM)** - Full FluidSynth integration using Emscripten build with js-synthesizer wrapper
+✅ **Fully Implemented:**
+- **Android** - Native C++ FluidSynth wrapper via JNI
+- **Web (WASM)** - Emscripten FluidSynth build with js-synthesizer wrapper
 
-Prepared for (stub implementations):
+🚧 **Stub Implementations (Not Yet Functional):**
 - **iOS** - Resources prepared, requires FluidSynth integration
-- **Desktop (JVM)** - Requires FluidSynth Java bindings
+- **Desktop (JVM)** - Requires FluidSynth Java bindings  
 - **Web (JS)** - Requires FluidSynth Emscripten integration
 
 ## WASM Implementation

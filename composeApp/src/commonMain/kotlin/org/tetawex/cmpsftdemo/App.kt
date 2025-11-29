@@ -1,8 +1,9 @@
 package org.tetawex.cmpsftdemo
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,18 +20,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.ui.tooling.preview.Preview
-
-import composesoundfontdemo.composeapp.generated.resources.Res
-import composesoundfontdemo.composeapp.generated.resources.compose_multiplatform
 
 @Composable
 @Preview
 fun App() {
     MaterialTheme {
-        var showContent by remember { mutableStateOf(false) }
         val synthManager = remember { getSynthManager() }
         var synthInitialized by remember { mutableStateOf(false) }
         var volume by remember { mutableStateOf(100f) }
@@ -48,33 +49,84 @@ fun App() {
             }
         }
 
+        // Keyboard support
+        val focusRequester = remember { FocusRequester() }
+        val pressedKeys = remember { mutableStateMapOf<Key, Boolean>() }
+        
+        // Map keyboard keys to MIDI notes
+        val keyToNote = remember {
+            mapOf(
+                // White keys: A S D F G H J K (C D E F G A B C)
+                Key.A to 60, // C
+                Key.S to 62, // D
+                Key.D to 64, // E
+                Key.F to 65, // F
+                Key.G to 67, // G
+                Key.H to 69, // A
+                Key.J to 71, // B
+                Key.K to 72, // C
+                // Black keys: W E T Y U (C# D# F# G# A#)
+                Key.W to 61, // C#
+                Key.E to 63, // D#
+                Key.T to 66, // F#
+                Key.Y to 68, // G#
+                Key.U to 70, // A#
+            )
+        }
+
+        LaunchedEffect(Unit) {
+            focusRequester.requestFocus()
+        }
+
         Column(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.primaryContainer)
                 .safeContentPadding()
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .focusRequester(focusRequester)
+                .focusable()
+                .onKeyEvent { keyEvent ->
+                    if (!synthInitialized) return@onKeyEvent false
+                    
+                    val note = keyToNote[keyEvent.key] ?: return@onKeyEvent false
+                    
+                    when (keyEvent.type) {
+                        KeyEventType.KeyDown -> {
+                            if (pressedKeys[keyEvent.key] != true) {
+                                pressedKeys[keyEvent.key] = true
+                                synthManager.playNote(note, 100)
+                            }
+                            true
+                        }
+                        KeyEventType.KeyUp -> {
+                            pressedKeys[keyEvent.key] = false
+                            synthManager.stopNote(note)
+                            true
+                        }
+                        else -> false
+                    }
+                },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Button(onClick = { showContent = !showContent }) {
-                Text("Toggle Info")
-            }
-            AnimatedVisibility(showContent) {
-                val greeting = remember { Greeting().greet() }
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Image(painterResource(Res.drawable.compose_multiplatform), null)
-                    Text("Compose: $greeting")
-                }
-            }
+            // App Title
+            Text(
+                "Synth Compose",
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
+            )
+            
+            Text(
+                "Use keyboard: A S D F G H J K (white keys), W E T Y U (black keys)",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
 
             // Synth Controls
             Text(
                 "Synth Controls",
                 style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(top = 24.dp, bottom = 16.dp)
+                modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)
             )
 
             if (synthInitialized) {
@@ -145,11 +197,31 @@ fun App() {
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     notes.forEach { (noteName, noteValue) ->
+                        var isPressed by remember { mutableStateOf(false) }
                         Button(
-                            onClick = { synthManager.playNote(noteValue, 100) },
-                            modifier = Modifier.weight(1f).padding(4.dp)
+                            onClick = { },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(4.dp)
+                                .pointerInput(noteValue) {
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                        if (!isPressed) {
+                                            isPressed = true
+                                            synthManager.playNote(noteValue, 100)
+                                        }
+                                        down.consume()
+                                    }
+                                }
                         ) {
                             Text(noteName)
+                        }
+                        LaunchedEffect(isPressed) {
+                            if (isPressed) {
+                                kotlinx.coroutines.delay(150)
+                                synthManager.stopNote(noteValue)
+                                isPressed = false
+                            }
                         }
                     }
                 }
@@ -176,11 +248,31 @@ fun App() {
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     chromaticNotes.forEach { (noteName, noteValue) ->
+                        var isPressed by remember { mutableStateOf(false) }
                         Button(
-                            onClick = { synthManager.playNote(noteValue, 100) },
-                            modifier = Modifier.weight(1f).padding(4.dp)
+                            onClick = { },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(4.dp)
+                                .pointerInput(noteValue) {
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                        if (!isPressed) {
+                                            isPressed = true
+                                            synthManager.playNote(noteValue, 100)
+                                        }
+                                        down.consume()
+                                    }
+                                }
                         ) {
                             Text(noteName)
+                        }
+                        LaunchedEffect(isPressed) {
+                            if (isPressed) {
+                                kotlinx.coroutines.delay(150)
+                                synthManager.stopNote(noteValue)
+                                isPressed = false
+                            }
                         }
                     }
                 }
