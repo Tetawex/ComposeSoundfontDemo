@@ -2,7 +2,7 @@ name: Deploy WASM to GitHub Pages
 
 on:
   push:
-    branches: [ master, main, wasm-port-attempt-2 ]
+    branches: [ deploy ]
   workflow_dispatch:
 
 permissions:
