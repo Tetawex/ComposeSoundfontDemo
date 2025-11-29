@@ -36,6 +36,10 @@ fun App() {
         var synthInitialized by remember { mutableStateOf(false) }
         var volume by remember { mutableStateOf(100f) }
         var program by remember { mutableStateOf(0f) }
+        
+        // Buffer size presets (WASM only)
+        val bufferSizePresets = listOf(64, 128, 256, 512, 1024, 2048, 4096, 8192)
+        var selectedBufferSize by remember { mutableStateOf(256) }
 
         // Initialize synth on first composition
         LaunchedEffect(Unit) {
@@ -170,6 +174,43 @@ fun App() {
                         valueRange = 0f..127f,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+
+                // Buffer Size Control (WASM only)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    val latencyMs = (selectedBufferSize / 48.0 * 10).toInt() / 10.0
+                    Text("Audio Buffer Size: $selectedBufferSize samples (~${latencyMs}ms @ 48kHz)")
+                    Text(
+                        "Lower = less latency, higher CPU usage",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        bufferSizePresets.forEach { bufferSize ->
+                            Button(
+                                onClick = {
+                                    selectedBufferSize = bufferSize
+                                    synthManager.setBufferSize(bufferSize)
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = selectedBufferSize != bufferSize
+                            ) {
+                                Text(
+                                    bufferSize.toString(),
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // Piano Keyboard (C Major scale)
