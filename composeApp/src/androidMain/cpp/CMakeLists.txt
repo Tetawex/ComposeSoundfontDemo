@@ -23,5 +23,6 @@ target_link_directories(fluidsynth_wrapper PRIVATE
 )
 
 target_link_libraries(fluidsynth_wrapper PRIVATE
-    fluidsynth
+    fluidsynth,
+    log
 )
