@@ -19,22 +19,32 @@ class AndroidSynthManager(private val context: Context) : SynthManager {
                 // Create synth
                 synthHandle = FluidSynthJNI.createSynth()
                 if (synthHandle == -1L) {
+                    android.util.Log.e("SynthManager", "Failed to create synthesizer")
                     return@withContext false
                 }
+                android.util.Log.i("SynthManager", "Synthesizer created with handle: $synthHandle")
 
                 // Try to load a default soundfont
-                // This is a placeholder - in a real app you'd provide a soundfont file
                 val soundFontPath = getSoundFontPath()
                 if (soundFontPath != null) {
+                    android.util.Log.i("SynthManager", "Loading soundfont from: $soundFontPath")
                     val sfId = FluidSynthJNI.loadSoundFont(synthHandle, soundFontPath)
                     if (sfId == -1) {
-                        // Continue even if soundfont fails to load
-                        android.util.Log.w(
-                            "SynthManager",
-                            "Failed to load soundfont, continuing anyway"
-                        )
+                        android.util.Log.e("SynthManager", "Failed to load soundfont")
+                    } else {
+                        android.util.Log.i("SynthManager", "Soundfont loaded with ID: $sfId")
                     }
+                } else {
+                    android.util.Log.w("SynthManager", "No soundfont file found")
                 }
+
+                val sfCount = FluidSynthJNI.getSoundFontCount(synthHandle)
+                android.util.Log.i("SynthManager", "Current soundfont count: $sfCount")
+                
+                // Set master gain to a reasonable level for audio output
+                val gainResult = FluidSynthJNI.setMasterGain(synthHandle, 0.8f)
+                val currentGain = FluidSynthJNI.getMasterGain(synthHandle)
+                android.util.Log.i("SynthManager", "Master gain set: result=$gainResult, current=$currentGain")
 
                 isInit = true
                 true
@@ -48,7 +58,16 @@ class AndroidSynthManager(private val context: Context) : SynthManager {
     override fun playNote(note: Int, velocity: Int) {
         if (!isInit || synthHandle == -1L) return
         try {
-            FluidSynthJNI.noteOn(synthHandle, currentChannel, note, velocity)
+            // Check if soundfonts are loaded
+            val sfCount = FluidSynthJNI.getSoundFontCount(synthHandle)
+            if (sfCount == 0) {
+                android.util.Log.e("SynthManager", "Cannot play note: no soundfonts loaded")
+                return
+            }
+            val result = FluidSynthJNI.noteOn(synthHandle, currentChannel, note, velocity)
+            if (result != 0) {
+                android.util.Log.e("SynthManager", "noteOn returned: $result")
+            }
         } catch (e: Exception) {
             android.util.Log.e("SynthManager", "Error playing note", e)
         }
@@ -96,12 +115,14 @@ class AndroidSynthManager(private val context: Context) : SynthManager {
     }
 
     private fun getSoundFontPath(): String? {
-        // Look for a soundfont in app's files directory
-        // This is a placeholder - you'd normally copy a soundfont during app setup
-        val soundFontFile = File(context.filesDir, "default.sf2")
+        // Look for the extracted sft_gu_gs.sf2 file
+        val soundFontFile = File(context.filesDir, "sft_gu_gs.sf2")
         return if (soundFontFile.exists()) {
-            soundFontFile.absolutePath
+            val path = soundFontFile.absolutePath
+            android.util.Log.i("SynthManager", "Found soundfont at: $path")
+            path
         } else {
+            android.util.Log.w("SynthManager", "Soundfont file not found at: ${soundFontFile.absolutePath}")
             null
         }
     }

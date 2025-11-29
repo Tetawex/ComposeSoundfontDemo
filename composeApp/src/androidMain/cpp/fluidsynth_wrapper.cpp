@@ -32,10 +32,18 @@ Java_org_tetawex_cmpsftdemo_FluidSynthJNI_createSynth(JNIEnv* env, jclass clazz)
             return -1;
         }
 
-        // Configure settings
+        // Configure settings for Android audio
         fluid_settings_setstr(settings, "synth.audio.driver", "oboe");
         fluid_settings_setint(settings, "synth.polyphony", 256);
         fluid_settings_setint(settings, "synth.midi-channels", 16);
+        
+        // Audio settings
+        fluid_settings_setint(settings, "audio.period-size", 4096);
+        fluid_settings_setint(settings, "audio.periods", 2);
+        
+        // Reverb and chorus
+        fluid_settings_setint(settings, "synth.reverb.active", 1);
+        fluid_settings_setint(settings, "synth.chorus.active", 1);
 
         // Create synthesizer
         fluid_synth_t* synth = new_fluid_synth(settings);
@@ -44,6 +52,9 @@ Java_org_tetawex_cmpsftdemo_FluidSynthJNI_createSynth(JNIEnv* env, jclass clazz)
             delete_fluid_settings(settings);
             return -1;
         }
+
+        // Set master gain (volume)
+        fluid_synth_set_gain(synth, 0.5f);
 
         // Store instances and return handle (thread-safe)
         std::lock_guard<std::mutex> lock(synth_mutex);
@@ -121,6 +132,26 @@ return -1;
 }
 }
 
+// Get number of loaded soundfonts
+JNIEXPORT jint JNICALL
+        Java_org_tetawex_cmpsftdemo_FluidSynthJNI_getSoundFontCount(JNIEnv* env, jclass clazz, jlong synth_handle) {
+try {
+std::lock_guard<std::mutex> lock(synth_mutex);
+auto it = synth_instances.find(synth_handle);
+if (it == synth_instances.end()) {
+LOGE("Synthesizer with ID %lld not found", synth_handle);
+return 0;
+}
+
+int count = fluid_synth_sfcount(it->second);
+LOGI("Current soundfont count: %d", count);
+return count;
+} catch (const std::exception& e) {
+LOGE("Exception in getSoundFontCount: %s", e.what());
+return 0;
+}
+}
+
 // Play a note
 JNIEXPORT jint JNICALL
         Java_org_tetawex_cmpsftdemo_FluidSynthJNI_noteOn(JNIEnv* env, jclass clazz, jlong synth_handle,
@@ -133,9 +164,27 @@ LOGE("Synthesizer with ID %lld not found", synth_handle);
 return FLUID_FAILED;
 }
 
-int result = fluid_synth_noteon(it->second, channel, note, velocity);
+// Debug: Check if any soundfonts are loaded
+int sfcount = fluid_synth_sfcount(it->second);
+if (sfcount == 0) {
+LOGE("No soundfonts loaded - cannot play note");
+return FLUID_FAILED;
+}
+
+// Get channel info for debugging
+fluid_synth_t* synth = it->second;
+int sfont_id = 0, bank = 0, program = 0;
+fluid_synth_get_program(synth, channel, &sfont_id, &bank, &program);
+float gain = fluid_synth_get_gain(synth);
+
+LOGI("Before noteOn - sfcount=%d, channel=%d, sfont=%d, bank=%d, program=%d, master_gain=%.2f", 
+     sfcount, channel, sfont_id, bank, program, gain);
+
+int result = fluid_synth_noteon(synth, channel, note, velocity);
 if (result != FLUID_OK) {
-LOGE("Failed to play note: channel=%d, note=%d, velocity=%d", channel, note, velocity);
+LOGE("Failed to play note: channel=%d, note=%d, velocity=%d (sfcount=%d)", channel, note, velocity, sfcount);
+} else {
+LOGI("Note ON: channel=%d, note=%d, velocity=%d", channel, note, velocity);
 }
 return result;
 } catch (const std::exception& e) {
@@ -242,6 +291,46 @@ JNIEXPORT jstring JNICALL
 char version[256];
 snprintf(version, sizeof(version), "FluidSynth %s", FLUIDSYNTH_VERSION);
 return env->NewStringUTF(version);
+}
+
+// Set master gain (volume)
+JNIEXPORT jint JNICALL
+        Java_org_tetawex_cmpsftdemo_FluidSynthJNI_setMasterGain(JNIEnv* env, jclass clazz, jlong synth_handle, jfloat gain) {
+try {
+std::lock_guard<std::mutex> lock(synth_mutex);
+auto it = synth_instances.find(synth_handle);
+if (it == synth_instances.end()) {
+LOGE("Synthesizer with ID %lld not found", synth_handle);
+return FLUID_FAILED;
+}
+
+fluid_synth_set_gain(it->second, gain);
+LOGI("Set master gain to: %.2f", gain);
+return FLUID_OK;
+} catch (const std::exception& e) {
+LOGE("Exception in setMasterGain: %s", e.what());
+return FLUID_FAILED;
+}
+}
+
+// Get master gain (volume)
+JNIEXPORT jfloat JNICALL
+        Java_org_tetawex_cmpsftdemo_FluidSynthJNI_getMasterGain(JNIEnv* env, jclass clazz, jlong synth_handle) {
+try {
+std::lock_guard<std::mutex> lock(synth_mutex);
+auto it = synth_instances.find(synth_handle);
+if (it == synth_instances.end()) {
+LOGE("Synthesizer with ID %lld not found", synth_handle);
+return 0.0f;
+}
+
+float gain = fluid_synth_get_gain(it->second);
+LOGI("Current master gain: %.2f", gain);
+return gain;
+} catch (const std::exception& e) {
+LOGE("Exception in getMasterGain: %s", e.what());
+return 0.0f;
+}
 }
 
 } // extern "C"
