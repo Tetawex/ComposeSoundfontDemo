@@ -50,7 +50,7 @@ set(FLUIDSYNTH_SUPPORT_UBSAN )
 # Only load dependencies on static builds
 if(NOT FLUIDSYNTH_IS_SHARED)
   # Allows CMake to use the additional modules
-  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+  list(APPEND CMAKE_MODULE_PATH ".")
 
   # Make searching for packages easier on VCPKG
   if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.15 AND VCPKG_TOOLCHAIN)
@@ -141,7 +141,7 @@ if(NOT FLUIDSYNTH_IS_SHARED)
   endif()
 
   # Restore the module path
-  list(REMOVE_ITEM CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+  list(REMOVE_ITEM CMAKE_MODULE_PATH ".")
 endif()
 
 set(FluidSynth_known_comps static shared)
@@ -166,7 +166,7 @@ if (FluidSynth_comp_static AND FluidSynth_comp_shared)
 endif ()
 
 set(FluidSynth_static_targets "${CMAKE_CURRENT_LIST_DIR}/FluidSynth-static-targets.cmake")
-set(FluidSynth_shared_targets "${CMAKE_CURRENT_LIST_DIR}/FluidSynth-shared-targets.cmake")
+set(FluidSynth_shared_targets "FluidSynth-shared-targets.cmake")
 
 macro(FluidSynth_load_targets type)
     if (NOT EXISTS "${FluidSynth_${type}_targets}")

@@ -79,7 +79,7 @@ object FluidSynthJNI {
      */
     external fun getVersion(): String
     
-    companion object {
+
         init {
             try {
                 System.loadLibrary("fluidsynth_wrapper")
@@ -87,5 +87,4 @@ object FluidSynthJNI {
                 throw RuntimeException("Failed to load native library 'fluidsynth_wrapper'", e)
             }
         }
-    }
 }

@@ -3,14 +3,20 @@
 #include <android/log.h>
 #include <memory>
 #include <unordered_map>
+#include <mutex>
 
 #define LOG_TAG "FluidSynthJNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+// Constants
+#define FLUID_OK 0
+#define FLUID_FAILED -1
+
 // Global state management
 static std::unordered_map<jlong, fluid_synth_t*> synth_instances;
 static std::unordered_map<jlong, fluid_settings_t*> settings_instances;
+static std::mutex synth_mutex;
 static jlong next_synth_id = 1;
 
 extern "C" {
@@ -39,7 +45,8 @@ Java_org_tetawex_cmpsftdemo_FluidSynthJNI_createSynth(JNIEnv* env, jclass clazz)
             return -1;
         }
 
-        // Store instances and return handle
+        // Store instances and return handle (thread-safe)
+        std::lock_guard<std::mutex> lock(synth_mutex);
         jlong synth_id = next_synth_id++;
         synth_instances[synth_id] = synth;
         settings_instances[synth_id] = settings;
@@ -56,6 +63,7 @@ Java_org_tetawex_cmpsftdemo_FluidSynthJNI_createSynth(JNIEnv* env, jclass clazz)
 JNIEXPORT void JNICALL
 Java_org_tetawex_cmpsftdemo_FluidSynthJNI_destroySynth(JNIEnv* env, jclass clazz, jlong synth_handle) {
     try {
+        std::lock_guard<std::mutex> lock(synth_mutex);
         auto synth_it = synth_instances.find(synth_handle);
         auto settings_it = settings_instances.find(synth_handle);
 
@@ -79,6 +87,12 @@ Java_org_tetawex_cmpsftdemo_FluidSynthJNI_destroySynth(JNIEnv* env, jclass clazz
 JNIEXPORT jint JNICALL
 Java_org_tetawex_cmpsftdemo_FluidSynthJNI_loadSoundFont(JNIEnv* env, jclass clazz, jlong synth_handle, jstring file_path) {
     try {
+        if (!file_path) {
+            LOGE("loadSoundFont: file_path is null");
+            return -1;
+        }
+
+        std::lock_guard<std::mutex> lock(synth_mutex);
         auto it = synth_instances.find(synth_handle);
         if (it == synth_instances.end()) {
             LOGE("Synthesizer with ID %lld not found", synth_handle);
@@ -86,6 +100,11 @@ Java_org_tetawex_cmpsftdemo_FluidSynthJNI_loadSoundFont(JNIEnv* env, jclass claz
         }
 
         const char* path = env->GetStringUTFChars(file_path, nullptr);
+        if (!path) {
+            LOGE("Failed to get UTF chars from file_path");
+            return -1;
+        }
+
         int sfont_id = fluid_synth_sfload(it->second, path, 1);
         env->ReleaseStringUTFChars(file_path, path);
 
@@ -94,7 +113,7 @@ Java_org_tetawex_cmpsftdemo_FluidSynthJNI_loadSoundFont(JNIEnv* env, jclass claz
             return -1;
         }
 
-        LOGI("Loaded SoundFont with ID: %d", sfont_id);
+        LOGI("Loaded SoundFont with ID: %d from %s", sfont_id, path);
         return sfont_id;
     } catch (const std::exception& e) {
         LOGE("Exception in loadSoundFont: %s", e.what());
@@ -107,6 +126,7 @@ JNIEXPORT jint JNICALL
 Java_org_tetawex_cmpsftdemo_FluidSynthJNI_noteOn(JNIEnv* env, jclass clazz, jlong synth_handle, 
                                                   jint channel, jint note, jint velocity) {
     try {
+        std::lock_guard<std::mutex> lock(synth_mutex);
         auto it = synth_instances.find(synth_handle);
         if (it == synth_instances.end()) {
             LOGE("Synthesizer with ID %lld not found", synth_handle);
@@ -129,6 +149,7 @@ JNIEXPORT jint JNICALL
 Java_org_tetawex_cmpsftdemo_FluidSynthJNI_noteOff(JNIEnv* env, jclass clazz, jlong synth_handle, 
                                                    jint channel, jint note) {
     try {
+        std::lock_guard<std::mutex> lock(synth_mutex);
         auto it = synth_instances.find(synth_handle);
         if (it == synth_instances.end()) {
             LOGE("Synthesizer with ID %lld not found", synth_handle);
@@ -151,6 +172,7 @@ JNIEXPORT jint JNICALL
 Java_org_tetawex_cmpsftdemo_FluidSynthJNI_programChange(JNIEnv* env, jclass clazz, jlong synth_handle, 
                                                         jint channel, jint program) {
     try {
+        std::lock_guard<std::mutex> lock(synth_mutex);
         auto it = synth_instances.find(synth_handle);
         if (it == synth_instances.end()) {
             LOGE("Synthesizer with ID %lld not found", synth_handle);
@@ -173,6 +195,7 @@ JNIEXPORT jint JNICALL
 Java_org_tetawex_cmpsftdemo_FluidSynthJNI_setChannelVolume(JNIEnv* env, jclass clazz, jlong synth_handle, 
                                                            jint channel, jint volume) {
     try {
+        std::lock_guard<std::mutex> lock(synth_mutex);
         auto it = synth_instances.find(synth_handle);
         if (it == synth_instances.end()) {
             LOGE("Synthesizer with ID %lld not found", synth_handle);
@@ -195,6 +218,7 @@ JNIEXPORT jint JNICALL
 Java_org_tetawex_cmpsftdemo_FluidSynthJNI_controlChange(JNIEnv* env, jclass clazz, jlong synth_handle, 
                                                         jint channel, jint controller, jint value) {
     try {
+        std::lock_guard<std::mutex> lock(synth_mutex);
         auto it = synth_instances.find(synth_handle);
         if (it == synth_instances.end()) {
             LOGE("Synthesizer with ID %lld not found", synth_handle);
