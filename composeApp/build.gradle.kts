@@ -76,16 +76,7 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
-    }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/androidMain/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
-
-    defaultConfig {
         externalNativeBuild {
             cmake {
                 cppFlags.add("-std=c++17")
@@ -93,6 +84,17 @@ android {
                 cppFlags.add("-frtti")
                 arguments.add("-DANDROID_STL=c++_shared")
             }
+        }
+
+//        ndk {
+//            abiFilters("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+//        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path("src/androidMain/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 

@@ -82,7 +82,7 @@ object FluidSynthJNI {
 
         init {
             try {
-                System.loadLibrary("libfluidsynth_wrapper")
+                System.loadLibrary("fluidsynth_wrapper")
             } catch (e: UnsatisfiedLinkError) {
                 throw RuntimeException("Failed to load native library 'fluidsynth_wrapper'", e)
             }
