@@ -186,11 +186,12 @@ All `js()` calls must be top-level functions:
 
 ## Performance Considerations
 
-- **Buffer Size**: 8192 samples balances latency and performance
-- **Sample Rate**: 48kHz (browser default, matches most audio hardware)
+- **Buffer Size**: 256 samples (desktop) or 512 samples (mobile) for low latency
+- **Sample Rate**: 48kHz (explicitly configured for consistency)
+- **Audio Context**: Uses 'interactive' latency hint for optimal performance
 - **WASM Overhead**: Near-native performance for audio synthesis
 - **Memory Usage**: ~10MB for FluidSynth + SoundFont
-- **Latency**: ~170ms total (buffer + processing + output)
+- **Latency**: ~5-10ms (desktop) or ~10-20ms (mobile) - suitable for real-time performance
 
 ## Debugging
 

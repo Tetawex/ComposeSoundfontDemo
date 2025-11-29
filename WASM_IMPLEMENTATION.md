@@ -27,6 +27,8 @@ The WASM FluidSynth integration is now fully functional!
 - ✅ External class declarations for FluidSynth API
 - ✅ Promise-based async operations with proper suspend function handling
 - ✅ Web Audio API integration via AudioWorkletNode
+- ✅ Optimized for low latency: 256-512 sample buffer, interactive latency hint
+- ✅ Dynamic buffer sizing based on device type (mobile vs desktop)
 
 ## Technical Approach
 

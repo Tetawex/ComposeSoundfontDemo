@@ -49,8 +49,8 @@ external object console : JsAny {
     fun error(message: String)
 }
 
-// Top-level audio context - created via js()
-private val audioContext: AudioContext = js("new (window.AudioContext || window.webkitAudioContext)()")
+// Top-level audio context - created with low-latency settings for better performance
+private val audioContext: AudioContext = js("new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive', sampleRate: 48000 })")
 
 /**
  * WASM implementation of SynthManager using FluidSynth Emscripten
@@ -112,10 +112,11 @@ class WasmSynthManager : SynthManager {
             synth.setGain(0.8)
             console.log("WasmSynthManager: Master gain set to ${synth.getGain()}")
             
-            // Create audio node and connect to output (8192 is the buffer size)
-            console.log("WasmSynthManager: Creating audio node")
+            // Create audio node with optimized buffer size for low latency
+            val bufferSize = getOptimalBufferSize()
+            console.log("WasmSynthManager: Creating audio node with buffer size: $bufferSize")
             val node = try {
-                synth.createAudioNode(audioContext, 8192)
+                synth.createAudioNode(audioContext, bufferSize)
             } catch (e: Throwable) {
                 console.error("WasmSynthManager: Failed to create audio node: ${e.message}")
                 throw e
@@ -130,10 +131,6 @@ class WasmSynthManager : SynthManager {
                 throw e
             }
             console.log("WasmSynthManager: Audio node connected")
-            
-            // Note: Audio context starts in 'suspended' state due to browser autoplay policy
-            // It will be resumed automatically on first user interaction (note play)
-            console.log("WasmSynthManager: Audio context state: ${getAudioContextState(audioContext)}")
             
             synthesizer = synth
             audioNode = node
@@ -209,6 +206,18 @@ class WasmSynthManager : SynthManager {
 // Top-level helper functions using js()
 private fun createSynthesizer(): Synthesizer = 
     js("new JSSynth.Synthesizer()")
+
+// Check if running on mobile device
+private fun isMobileDevice(): Boolean =
+    js("(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent))")
+
+// Get optimal buffer size based on device capabilities
+// Smaller buffer = lower latency but requires more CPU
+private fun getOptimalBufferSize(): Int {
+    // Mobile devices: use 512 for stability
+    // Desktop: use 256 for lower latency
+    return if (isMobileDevice()) 512 else 256
+}
 
 // Resume audio context asynchronously (fire and forget)
 private fun resumeAudioContextAsync(ctx: AudioContext): Unit =
