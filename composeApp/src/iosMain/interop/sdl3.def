@@ -1,0 +1,5 @@
+language = C
+headers = SDL.h SDL_init.h SDL_main.h
+
+compilerOpts = -framework SDL3 -DSDL_MAIN_HANDLED
+linkerOpts = -framework SDL3

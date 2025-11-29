@@ -21,9 +21,65 @@ kotlin {
         iosArm64(),
         iosSimulatorArm64()
     ).forEach { iosTarget ->
+        val frameworkPath = "${projectDir}/frameworks"
+        val (fluidSynthFwPath, sdl3FwPath) = when (iosTarget.name) {
+            "iosArm64" -> Pair(
+                "$frameworkPath/FluidSynth.xcframework/ios-arm64",
+                "$frameworkPath/SDL3.xcframework/ios-arm64"
+            )
+            "iosSimulatorArm64" -> Pair(
+                "$frameworkPath/FluidSynth.xcframework/ios-arm64_x86_64-simulator",
+                "$frameworkPath/SDL3.xcframework/ios-arm64_x86_64-simulator"
+            )
+            else -> throw IllegalArgumentException("Unsupported target: ${iosTarget.name}")
+        }
+        
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
+            
+            // Link FluidSynth and SDL3 frameworks with architecture-specific paths
+            linkerOpts += "-F$fluidSynthFwPath"
+            linkerOpts += "-F$sdl3FwPath"
+            linkerOpts += "-framework"
+            linkerOpts += "FluidSynth"
+            linkerOpts += "-framework"
+            linkerOpts += "SDL3"
+            linkerOpts += "-framework"
+            linkerOpts += "CoreFoundation"
+            linkerOpts += "-framework"
+            linkerOpts += "AudioToolbox"
+            linkerOpts += "-framework"
+            linkerOpts += "CoreAudio"
+        }
+        
+        // Configure C interop for FluidSynth and SDL3
+        iosTarget.compilations.getByName("main") {
+            cinterops {
+                val fluidsynth by creating {
+                    defFile = project.file("src/iosMain/interop/fluidsynth.def")
+                    packageName = "org.tetawex.cmpsftdemo.fluidsynth"
+                    
+                    compilerOpts += listOf(
+                        "-F$fluidSynthFwPath",
+                        "-F$sdl3FwPath"
+                    )
+                    includeDirs.allHeaders(
+                        "$fluidSynthFwPath/FluidSynth.framework/Headers"
+                    )
+                }
+                val sdl3 by creating {
+                    defFile = project.file("src/iosMain/interop/sdl3.def")
+                    packageName = "org.tetawex.cmpsftdemo.sdl3"
+                    
+                    compilerOpts += listOf(
+                        "-F$sdl3FwPath"
+                    )
+                    includeDirs.allHeaders(
+                        "$sdl3FwPath/SDL3.framework/Headers"
+                    )
+                }
+            }
         }
     }
     
