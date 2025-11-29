@@ -68,6 +68,7 @@ kotlin {
 android {
     namespace = "org.tetawex.cmpsftdemo"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "org.tetawex.cmpsftdemo"
@@ -76,6 +77,25 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/androidMain/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    defaultConfig {
+        externalNativeBuild {
+            cmake {
+                cppFlags.add("-std=c++17")
+                cppFlags.add("-fexceptions")
+                cppFlags.add("-frtti")
+                arguments.add("-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
