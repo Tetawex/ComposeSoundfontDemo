@@ -138,6 +138,7 @@ fun App() {
         var synthInitialized by remember { mutableStateOf(false) }
         var midiState by remember { mutableStateOf(MidiState.NOT_INITIALIZED) }
         var midiDevices by remember { mutableStateOf<List<MidiDeviceInfo>>(emptyList()) }
+        var enabledMidiInputs by remember { mutableStateOf<Set<String>>(emptySet()) }
         
         var volume by remember { mutableStateOf(100f) }
         var program by remember { mutableStateOf(0f) }
@@ -274,6 +275,11 @@ fun App() {
                     midiManager = midiManager,
                     midiState = midiState,
                     midiDevices = midiDevices,
+                    enabledInputIds = enabledMidiInputs,
+                    onToggleInput = { deviceId, enabled ->
+                        midiManager.setInputEnabled(deviceId, enabled)
+                        enabledMidiInputs = midiManager.getEnabledInputIds()
+                    },
                     showPanel = showMidiPanel,
                     onTogglePanel = { showMidiPanel = it },
                     onInitializeMidi = initializeMidi,
@@ -286,6 +292,7 @@ fun App() {
                 LaunchedEffect(midiState) {
                     if (midiState == MidiState.READY) {
                         midiDevices = midiManager.getInputDevices()
+                        enabledMidiInputs = midiManager.getEnabledInputIds()
                     }
                 }
 
@@ -788,6 +795,8 @@ private fun MidiDevicesPanel(
     midiManager: MidiManager,
     midiState: MidiState,
     midiDevices: List<MidiDeviceInfo>,
+    enabledInputIds: Set<String>,
+    onToggleInput: (deviceId: String, enabled: Boolean) -> Unit,
     showPanel: Boolean,
     onTogglePanel: (Boolean) -> Unit,
     onInitializeMidi: () -> Unit,
@@ -954,9 +963,9 @@ private fun MidiDevicesPanel(
                                 inputDevices.forEach { device ->
                                     MidiDeviceRow(
                                         device = device,
-                                        isEnabled = midiManager.isInputEnabled(device.id),
+                                        isEnabled = device.id in enabledInputIds,
                                         onToggle = { enabled ->
-                                            midiManager.setInputEnabled(device.id, enabled)
+                                            onToggleInput(device.id, enabled)
                                         }
                                     )
                                 }

@@ -406,7 +406,7 @@ private fun isMobileDevice(): Boolean =
 // Get optimal buffer size based on device capabilities
 // Smaller buffer = lower latency but requires more CPU
 private fun getOptimalBufferSize(): Int {
-    return 256
+    return 512
     // Mobile devices: use 512 for stability
     // Desktop: use 256 for lower latency
     // return if (isMobileDevice()) 512 else 256
