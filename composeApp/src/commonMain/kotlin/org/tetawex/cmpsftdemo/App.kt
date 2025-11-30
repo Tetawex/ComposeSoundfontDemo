@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
@@ -38,7 +40,9 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import org.jetbrains.compose.ui.tooling.preview.Preview
+import kotlin.math.absoluteValue
 
 // Light theme colors
 private val LightColorScheme = lightColorScheme(
@@ -124,6 +128,9 @@ fun App() {
         
         // Buffer size selector
         var selectedBufferSizeIndex by remember { mutableStateOf(1) } // Default to 256
+        
+        // Spectrogram visibility toggle
+        var showSpectrogram by remember { mutableStateOf(true) }
 
         // Track pressed notes (by MIDI note number)
         val pressedNotes = remember { mutableStateMapOf<Int, Boolean>() }
@@ -330,6 +337,45 @@ fun App() {
                                 inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
                             ),
                             modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+                
+                // Spectrogram visualization (only shown if available and enabled)
+                if (synthManager.isSpectrumAnalysisAvailable()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 32.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Spectrum Analyzer",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Switch(
+                            checked = showSpectrogram,
+                            onCheckedChange = { showSpectrogram = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        )
+                    }
+                    
+                    if (showSpectrogram) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Spectrogram(
+                            synthManager = synthManager,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .padding(horizontal = 32.dp)
                         )
                     }
                 }
@@ -560,6 +606,93 @@ private fun PianoKeyboard(
                             x + (blackKeyWidth - textLayoutResult.size.width) / 2,
                             blackKeyHeight - textLayoutResult.size.height - 6.dp.toPx()
                         )
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Spectrogram component that displays real-time frequency spectrum from the synth
+ */
+@Composable
+private fun Spectrogram(
+    synthManager: SynthManager,
+    modifier: Modifier = Modifier
+) {
+    val numBars = 64
+    
+    // Display magnitudes as state - changes trigger recomposition
+    val displayMagnitudes = remember { mutableStateListOf<Float>().apply { addAll(List(numBars) { 0f }) } }
+    
+    // Poll spectrum data at 120fps
+    LaunchedEffect(synthManager) {
+        while (true) {
+            if (synthManager.isInitialized() && synthManager.isSpectrumAnalysisAvailable()) {
+                val data = synthManager.getSpectrumData()
+                if (data != null && data.magnitudes.isNotEmpty()) {
+                    val magnitudes = data.magnitudes
+                    val totalBins = magnitudes.size
+                    
+                    for (i in 0 until numBars) {
+                        val startBin = ((i.toFloat() / numBars).let { it * it } * totalBins * 0.5f).toInt()
+                        val endBin = (((i + 1).toFloat() / numBars).let { it * it } * totalBins * 0.5f).toInt()
+                            .coerceAtLeast(startBin + 1)
+                            .coerceAtMost(totalBins)
+                        
+                        var sum = 0f
+                        for (bin in startBin until endBin) {
+                            sum += magnitudes[bin]
+                        }
+                        displayMagnitudes[i] = if (endBin > startBin) (sum / (endBin - startBin) * 1.5f).coerceIn(0f, 1f) else 0f
+                    }
+                }
+            }
+            delay(8) // ~120fps
+        }
+    }
+    
+    // Colors for spectrum bars - gradient from blue (low) to red (high frequency)
+    val barColors = remember {
+        listOf(
+            Color(0xFF2196F3), // Blue - low frequencies
+            Color(0xFF00BCD4), // Cyan
+            Color(0xFF4CAF50), // Green
+            Color(0xFFFFEB3B), // Yellow
+            Color(0xFFFF9800), // Orange
+            Color(0xFFF44336)  // Red - high frequencies
+        )
+    }
+    
+    Box(
+        modifier = modifier
+            .background(Color(0xFF1A1C1E), shape = MaterialTheme.shapes.small)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(4.dp)) {
+            // Calculate bar dimensions
+            val barWidth = size.width / numBars
+            val barSpacing = 2f
+            val effectiveBarWidth = barWidth - barSpacing
+            
+            for (i in 0 until numBars) {
+                val magnitude = displayMagnitudes[i]
+                
+                // Calculate bar height
+                val barHeight = magnitude * size.height
+                
+                // Calculate color based on bar position (frequency)
+                val colorIndex = (i.toFloat() / numBars * (barColors.size - 1)).toInt()
+                    .coerceIn(0, barColors.size - 1)
+                val color = barColors[colorIndex]
+                
+                // Draw the bar
+                if (barHeight > 0.5f) {
+                    drawRoundRect(
+                        color = color,
+                        topLeft = Offset(i * barWidth + barSpacing / 2, size.height - barHeight),
+                        size = Size(effectiveBarWidth, barHeight),
+                        cornerRadius = CornerRadius(2f, 2f)
                     )
                 }
             }
