@@ -16,6 +16,9 @@ external class Synthesizer : JsAny {
     fun midiNoteOff(channel: Int, key: Int)
     fun midiProgramChange(channel: Int, program: Int)
     fun midiControl(channel: Int, control: Int, value: Int)
+    fun midiPitchBend(channel: Int, value: Int)
+    fun midiChannelPressure(channel: Int, value: Int)
+    fun midiKeyPressure(channel: Int, key: Int, value: Int)
     fun setGain(gain: Double)
     fun getGain(): Double
     fun close()
@@ -30,7 +33,7 @@ external interface IJSSynth : JsAny {
 private val JSSynth: IJSSynth = js("window.JSSynth")
 
 external class AudioWorkletNode : JsAny {
-    fun connect(destination: AudioDestinationNode)
+    fun connect(destination: JsAny): JsAny
     fun disconnect()
 }
 
@@ -38,9 +41,20 @@ external class AudioContext : JsAny {
     val sampleRate: Double
     val destination: AudioDestinationNode
     fun resume(): Promise<JsAny?>
+    fun createAnalyser(): AnalyserNode
 }
 
 external class AudioDestinationNode : JsAny
+
+// Web Audio API AnalyserNode
+external class AnalyserNode : JsAny {
+    var fftSize: Int
+    var smoothingTimeConstant: Double
+    val frequencyBinCount: Int
+    fun getByteFrequencyData(array: JsAny)
+    fun getFloatFrequencyData(array: JsAny)
+    fun connect(destination: JsAny): JsAny
+}
 
 // Top-level console declarations
 external object console : JsAny {
@@ -58,6 +72,8 @@ private val audioContext: AudioContext = js("new (window.AudioContext || window.
 class WasmSynthManager : SynthManager {
     private var synthesizer: Synthesizer? = null
     private var audioNode: AudioWorkletNode? = null
+    private var analyserNode: AnalyserNode? = null
+    private var frequencyDataArray: JsAny? = null
     private var isInit = false
     private val channel = 0
     private var currentBufferSize: Int = getOptimalBufferSize()
@@ -123,17 +139,37 @@ class WasmSynthManager : SynthManager {
             }
             console.log("WasmSynthManager: Audio node created successfully")
             
-            console.log("WasmSynthManager: Connecting audio node to destination")
-            try {
-                node.connect(audioContext.destination)
+            // Create AnalyserNode for spectrum analysis
+            console.log("WasmSynthManager: Creating AnalyserNode for spectrum analysis")
+            val analyser = try {
+                audioContext.createAnalyser().apply {
+                    fftSize = 2048  // Results in 1024 frequency bins
+                    smoothingTimeConstant = 0.8  // Smoothing for visual appeal
+                }
             } catch (e: Throwable) {
-                console.error("WasmSynthManager: Failed to connect audio node: ${e.message}")
+                console.error("WasmSynthManager: Failed to create AnalyserNode: ${e.message}")
                 throw e
             }
-            console.log("WasmSynthManager: Audio node connected")
+            console.log("WasmSynthManager: AnalyserNode created with fftSize=${analyser.fftSize}")
+            
+            // Connect: audioNode -> analyserNode -> destination
+            console.log("WasmSynthManager: Connecting audio graph: synth -> analyser -> destination")
+            try {
+                node.connect(analyser)
+                analyser.connect(audioContext.destination)
+            } catch (e: Throwable) {
+                console.error("WasmSynthManager: Failed to connect audio graph: ${e.message}")
+                throw e
+            }
+            console.log("WasmSynthManager: Audio graph connected")
+            
+            // Create Uint8Array for frequency data
+            frequencyDataArray = createUint8Array(analyser.frequencyBinCount)
+            console.log("WasmSynthManager: Created frequency data array with ${analyser.frequencyBinCount} bins")
             
             synthesizer = synth
             audioNode = node
+            analyserNode = analyser
             isInit = true
             
             console.log("WasmSynthManager: Initialization complete")
@@ -204,7 +240,15 @@ class WasmSynthManager : SynthManager {
             
             // Create new audio node with new buffer size
             val node = synth.createAudioNode(audioContext, bufferSize)
-            node.connect(audioContext.destination)
+            
+            // Reconnect through analyser if available
+            val analyser = analyserNode
+            if (analyser != null) {
+                node.connect(analyser)
+                // Analyser is already connected to destination
+            } else {
+                node.connect(audioContext.destination)
+            }
             
             audioNode = node
             currentBufferSize = bufferSize
@@ -215,16 +259,138 @@ class WasmSynthManager : SynthManager {
     }
 
     override fun isInitialized(): Boolean = isInit
+    
+    override fun isSpectrumAnalysisAvailable(): Boolean = analyserNode != null
+    
+    override fun getSpectrumData(): SpectrumData? {
+        val analyser = analyserNode ?: return null
+        val dataArray = frequencyDataArray ?: return null
+        
+        try {
+            // Get frequency data from analyser (values 0-255)
+            analyser.getByteFrequencyData(dataArray)
+            
+            // Convert Uint8Array to FloatArray with normalization (0.0 to 1.0)
+            val binCount = analyser.frequencyBinCount
+            val magnitudes = FloatArray(binCount) { i ->
+                getUint8ArrayValue(dataArray, i) / 255f
+            }
+            
+            return SpectrumData(
+                magnitudes = magnitudes,
+                sampleRate = audioContext.sampleRate.toInt(),
+                fftSize = analyser.fftSize
+            )
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error getting spectrum data: ${e.message ?: "Unknown error"}")
+            return null
+        }
+    }
 
     override fun cleanup() {
         try {
             audioNode?.disconnect()
+            analyserNode = null
+            frequencyDataArray = null
             synthesizer?.close()
             synthesizer = null
             audioNode = null
             isInit = false
         } catch (e: Throwable) {
             console.error("WasmSynthManager: Error during cleanup: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    // ========================================================================
+    // Extended MIDI methods for MidiInputManager integration
+    // ========================================================================
+    
+    /**
+     * Play a note on a specific MIDI channel
+     */
+    fun playNoteOnChannel(channel: Int, note: Int, velocity: Int) {
+        if (!isInit) {
+            console.warn("WasmSynthManager: Cannot play note - not initialized")
+            return
+        }
+        try {
+            resumeAudioContextIfNeeded()
+            synthesizer?.midiNoteOn(channel, note, velocity)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error playing note on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Stop a note on a specific MIDI channel
+     */
+    fun stopNoteOnChannel(channel: Int, note: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiNoteOff(channel, note)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error stopping note on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Send a control change message
+     */
+    fun sendControlChange(channel: Int, controller: Int, value: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiControl(channel, controller, value)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error sending CC $controller on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Change program on a specific channel
+     */
+    fun changeProgramOnChannel(channel: Int, program: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiProgramChange(channel, program)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error changing program on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Send pitch bend (14-bit value: 0-16383, center at 8192)
+     */
+    fun sendPitchBend(channel: Int, value: Int) {
+        if (!isInit) return
+        try {
+            // js-synthesizer expects the 14-bit value directly
+            synthesizer?.midiPitchBend(channel, value)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error sending pitch bend on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Send channel pressure (aftertouch)
+     */
+    fun sendChannelPressure(channel: Int, pressure: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiChannelPressure(channel, pressure)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error sending channel pressure on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Send polyphonic key pressure
+     */
+    fun sendKeyPressure(channel: Int, key: Int, pressure: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiKeyPressure(channel, key, pressure)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error sending key pressure on channel $channel: ${e.message ?: "Unknown error"}")
         }
     }
 }
@@ -240,7 +406,7 @@ private fun isMobileDevice(): Boolean =
 // Get optimal buffer size based on device capabilities
 // Smaller buffer = lower latency but requires more CPU
 private fun getOptimalBufferSize(): Int {
-    return 512
+    return 256
     // Mobile devices: use 512 for stability
     // Desktop: use 256 for lower latency
     // return if (isMobileDevice()) 512 else 256
@@ -300,7 +466,7 @@ private fun <T : JsAny?> promiseThen(
 """)
 
 // Suspend function wrapper - doesn't use js() directly in suspend context
-private suspend fun promiseToSuspend(promise: Promise<JsAny?>): JsAny? = suspendCoroutine { cont ->
+suspend fun promiseToSuspend(promise: Promise<JsAny?>): JsAny? = suspendCoroutine { cont ->
     promiseThen(
         promise,
         onSuccess = { value -> 
@@ -329,6 +495,14 @@ private fun getErrorStack(error: JsAny?): String =
 // Helper to get audio context state
 private fun getAudioContextState(audioContext: AudioContext): String =
     js("audioContext.state")
+
+// Helper to create a Uint8Array for frequency data
+private fun createUint8Array(size: Int): JsAny =
+    js("new Uint8Array(size)")
+
+// Helper to get value from Uint8Array at index
+private fun getUint8ArrayValue(array: JsAny, index: Int): Float =
+    js("array[index]")
 
 // Helper to log error details
 private fun logError(message: String, error: Throwable) {

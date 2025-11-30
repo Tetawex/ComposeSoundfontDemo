@@ -1,6 +1,56 @@
 package org.tetawex.cmpsftdemo
 
 /**
+ * Data class for audio spectrum analysis
+ * Contains frequency bin magnitudes for spectrogram visualization
+ */
+data class SpectrumData(
+    /**
+     * Frequency magnitude data (0.0 to 1.0 normalized)
+     * Array length equals FFT size / 2 (number of frequency bins)
+     */
+    val magnitudes: FloatArray,
+    
+    /**
+     * Sample rate used for this spectrum analysis
+     */
+    val sampleRate: Int = 44100,
+    
+    /**
+     * FFT size used for this analysis
+     */
+    val fftSize: Int = 2048
+) {
+    /**
+     * Get the frequency (Hz) for a given bin index
+     */
+    fun frequencyForBin(binIndex: Int): Float {
+        return binIndex.toFloat() * sampleRate / fftSize
+    }
+    
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other == null || this::class != other::class) return false
+        other as SpectrumData
+        if (!magnitudes.contentEquals(other.magnitudes)) return false
+        if (sampleRate != other.sampleRate) return false
+        if (fftSize != other.fftSize) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = magnitudes.contentHashCode()
+        result = 31 * result + sampleRate.hashCode()
+        result = 31 * result + fftSize
+        return result
+    }
+    
+    companion object {
+        val EMPTY = SpectrumData(FloatArray(0))
+    }
+}
+
+/**
  * Platform-independent interface for synth operations
  */
 interface SynthManager {
@@ -45,6 +95,17 @@ interface SynthManager {
      * Check if synth is initialized
      */
     fun isInitialized(): Boolean
+    
+    /**
+     * Check if spectrum analysis is available on this platform
+     */
+    fun isSpectrumAnalysisAvailable(): Boolean = false
+    
+    /**
+     * Get current audio spectrum data for visualization
+     * Returns null if spectrum analysis is not available or not initialized
+     */
+    fun getSpectrumData(): SpectrumData? = null
     
     /**
      * Cleanup resources

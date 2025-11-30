@@ -1,0 +1,6 @@
+language = C
+headers = fluidsynth.h
+headerFilter = fluidsynth.h fluidsynth/**
+
+compilerOpts = -framework FluidSynth
+linkerOpts = -framework FluidSynth -framework SDL3 -framework CoreFoundation -framework AudioToolbox -framework CoreAudio
