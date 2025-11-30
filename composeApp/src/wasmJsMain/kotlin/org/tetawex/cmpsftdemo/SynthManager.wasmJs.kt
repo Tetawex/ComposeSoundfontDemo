@@ -16,6 +16,9 @@ external class Synthesizer : JsAny {
     fun midiNoteOff(channel: Int, key: Int)
     fun midiProgramChange(channel: Int, program: Int)
     fun midiControl(channel: Int, control: Int, value: Int)
+    fun midiPitchBend(channel: Int, value: Int)
+    fun midiChannelPressure(channel: Int, value: Int)
+    fun midiKeyPressure(channel: Int, key: Int, value: Int)
     fun setGain(gain: Double)
     fun getGain(): Double
     fun close()
@@ -297,6 +300,99 @@ class WasmSynthManager : SynthManager {
             console.error("WasmSynthManager: Error during cleanup: ${e.message ?: "Unknown error"}")
         }
     }
+    
+    // ========================================================================
+    // Extended MIDI methods for MidiInputManager integration
+    // ========================================================================
+    
+    /**
+     * Play a note on a specific MIDI channel
+     */
+    fun playNoteOnChannel(channel: Int, note: Int, velocity: Int) {
+        if (!isInit) {
+            console.warn("WasmSynthManager: Cannot play note - not initialized")
+            return
+        }
+        try {
+            resumeAudioContextIfNeeded()
+            synthesizer?.midiNoteOn(channel, note, velocity)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error playing note on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Stop a note on a specific MIDI channel
+     */
+    fun stopNoteOnChannel(channel: Int, note: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiNoteOff(channel, note)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error stopping note on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Send a control change message
+     */
+    fun sendControlChange(channel: Int, controller: Int, value: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiControl(channel, controller, value)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error sending CC $controller on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Change program on a specific channel
+     */
+    fun changeProgramOnChannel(channel: Int, program: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiProgramChange(channel, program)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error changing program on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Send pitch bend (14-bit value: 0-16383, center at 8192)
+     */
+    fun sendPitchBend(channel: Int, value: Int) {
+        if (!isInit) return
+        try {
+            // js-synthesizer expects the 14-bit value directly
+            synthesizer?.midiPitchBend(channel, value)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error sending pitch bend on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Send channel pressure (aftertouch)
+     */
+    fun sendChannelPressure(channel: Int, pressure: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiChannelPressure(channel, pressure)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error sending channel pressure on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
+    
+    /**
+     * Send polyphonic key pressure
+     */
+    fun sendKeyPressure(channel: Int, key: Int, pressure: Int) {
+        if (!isInit) return
+        try {
+            synthesizer?.midiKeyPressure(channel, key, pressure)
+        } catch (e: Throwable) {
+            console.error("WasmSynthManager: Error sending key pressure on channel $channel: ${e.message ?: "Unknown error"}")
+        }
+    }
 }
 
 // Top-level helper functions using js()
@@ -310,7 +406,7 @@ private fun isMobileDevice(): Boolean =
 // Get optimal buffer size based on device capabilities
 // Smaller buffer = lower latency but requires more CPU
 private fun getOptimalBufferSize(): Int {
-    return 512
+    return 256
     // Mobile devices: use 512 for stability
     // Desktop: use 256 for lower latency
     // return if (isMobileDevice()) 512 else 256
@@ -370,7 +466,7 @@ private fun <T : JsAny?> promiseThen(
 """)
 
 // Suspend function wrapper - doesn't use js() directly in suspend context
-private suspend fun promiseToSuspend(promise: Promise<JsAny?>): JsAny? = suspendCoroutine { cont ->
+suspend fun promiseToSuspend(promise: Promise<JsAny?>): JsAny? = suspendCoroutine { cont ->
     promiseThen(
         promise,
         onSuccess = { value -> 

@@ -2,6 +2,8 @@ package org.tetawex.cmpsftdemo
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +16,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContentPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -25,6 +36,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
@@ -37,10 +49,12 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import kotlin.math.absoluteValue
 
@@ -119,7 +133,12 @@ private val keyToNoteOffset: Map<Key, Int> = mapOf(
 fun App() {
     MaterialTheme(colorScheme = LightColorScheme) {
         val synthManager = remember { getSynthManager() }
+        val midiManager = remember { getMidiManager(synthManager) }
+        
         var synthInitialized by remember { mutableStateOf(false) }
+        var midiState by remember { mutableStateOf(MidiState.NOT_INITIALIZED) }
+        var midiDevices by remember { mutableStateOf<List<MidiDeviceInfo>>(emptyList()) }
+        
         var volume by remember { mutableStateOf(100f) }
         var program by remember { mutableStateOf(0f) }
         
@@ -131,6 +150,9 @@ fun App() {
         
         // Spectrogram visibility toggle
         var showSpectrogram by remember { mutableStateOf(true) }
+        
+        // MIDI devices panel visibility
+        var showMidiPanel by remember { mutableStateOf(true) }
 
         // Track pressed notes (by MIDI note number)
         val pressedNotes = remember { mutableStateMapOf<Int, Boolean>() }
@@ -142,15 +164,53 @@ fun App() {
         // Calculate base MIDI note from octave (C of that octave)
         // MIDI note 60 = C4, so C0 = 12, C1 = 24, etc.
         val baseMidiNote = (baseOctave + 1) * 12
+        
+        // Coroutine scope for MIDI initialization triggered by user action
+        val coroutineScope = rememberCoroutineScope()
 
         // Initialize synth on first composition
         LaunchedEffect(Unit) {
             synthInitialized = synthManager.initialize()
         }
+        
+        // Check MIDI support (but don't request permission yet - needs user gesture)
+        LaunchedEffect(synthInitialized) {
+            if (synthInitialized) {
+                if (!midiManager.isSupported()) {
+                    midiState = MidiState.NOT_SUPPORTED
+                }
+                // Don't auto-initialize - Web MIDI API requires user gesture
+            }
+        }
+        
+        // Function to initialize MIDI (called from user click)
+        val initializeMidi: () -> Unit = {
+            if (midiManager.isSupported() && midiState != MidiState.READY && midiState != MidiState.INITIALIZING) {
+                midiState = MidiState.INITIALIZING
+                coroutineScope.launch {
+                    val success = midiManager.initialize()
+                    midiState = midiManager.getState()
+                    if (success) {
+                        midiDevices = midiManager.getInputDevices()
+                    }
+                }
+            }
+        }
+        
+        // Refresh MIDI devices periodically (for hot-plug detection)
+        LaunchedEffect(midiState) {
+            if (midiState == MidiState.READY) {
+                while (true) {
+                    delay(1000)
+                    midiDevices = midiManager.getInputDevices()
+                }
+            }
+        }
 
         // Cleanup on disposal
         DisposableEffect(Unit) {
             onDispose {
+                midiManager.cleanup()
                 synthManager.cleanup()
             }
         }
@@ -206,8 +266,28 @@ fun App() {
                     "Ready • Click piano keys or use keyboard (Q-] for white, 2-= for black)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
+                
+                // MIDI Devices Section
+                MidiDevicesPanel(
+                    midiManager = midiManager,
+                    midiState = midiState,
+                    midiDevices = midiDevices,
+                    showPanel = showMidiPanel,
+                    onTogglePanel = { showMidiPanel = it },
+                    onInitializeMidi = initializeMidi,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+                
+                // Refresh devices when MIDI becomes ready
+                LaunchedEffect(midiState) {
+                    if (midiState == MidiState.READY) {
+                        midiDevices = midiManager.getInputDevices()
+                    }
+                }
 
                 // Piano Keyboard (max 80% of viewport height)
                 PianoKeyboard(
@@ -697,5 +777,277 @@ private fun Spectrogram(
                 }
             }
         }
+    }
+}
+
+/**
+ * MIDI devices panel showing connection status and device list
+ */
+@Composable
+private fun MidiDevicesPanel(
+    midiManager: MidiManager,
+    midiState: MidiState,
+    midiDevices: List<MidiDeviceInfo>,
+    showPanel: Boolean,
+    onTogglePanel: (Boolean) -> Unit,
+    onInitializeMidi: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        // Header row with toggle
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable { onTogglePanel(!showPanel) }
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Status indicator
+                MidiStatusIndicator(midiState)
+                
+                Text(
+                    text = "MIDI Devices",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                // Device count badge
+                if (midiState == MidiState.READY) {
+                    val inputCount = midiDevices.count { it.isInput && it.isConnected }
+                    Text(
+                        text = "$inputCount input${if (inputCount != 1) "s" else ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+            
+            Text(
+                text = if (showPanel) "▲" else "▼",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        // Expandable content
+        if (showPanel) {
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                    .padding(16.dp)
+            ) {
+                when (midiState) {
+                    MidiState.NOT_SUPPORTED -> {
+                        Column {
+                            Text(
+                                "MIDI Not Supported",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Web MIDI API is not available in this browser.\nTry Chrome, Edge, or Firefox (v108+). Safari is not supported.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    
+                    MidiState.PERMISSION_DENIED -> {
+                        Column {
+                            Text(
+                                "MIDI Permission Denied",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Please allow MIDI access in your browser settings, then click Retry.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = onInitializeMidi,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text("Retry")
+                            }
+                        }
+                    }
+                    
+                    MidiState.NOT_INITIALIZED -> {
+                        Column {
+                            Text(
+                                "Click to enable MIDI input from connected devices.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = onInitializeMidi,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text("Connect MIDI Devices")
+                            }
+                        }
+                    }
+                    
+                    MidiState.INITIALIZING -> {
+                        Text(
+                            "Requesting MIDI access...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    MidiState.ERROR -> {
+                        Column {
+                            Text(
+                                "MIDI Error",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = onInitializeMidi,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text("Retry")
+                            }
+                        }
+                    }
+                    
+                    MidiState.READY -> {
+                        val inputDevices = midiDevices.filter { it.isInput }
+                        
+                        if (inputDevices.isEmpty()) {
+                            Text(
+                                "No MIDI input devices found.\nConnect a MIDI controller and it will appear here.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                inputDevices.forEach { device ->
+                                    MidiDeviceRow(
+                                        device = device,
+                                        isEnabled = midiManager.isInputEnabled(device.id),
+                                        onToggle = { enabled ->
+                                            midiManager.setInputEnabled(device.id, enabled)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Status indicator circle for MIDI state
+ */
+@Composable
+private fun MidiStatusIndicator(state: MidiState) {
+    val color = when (state) {
+        MidiState.READY -> Color(0xFF4CAF50) // Green
+        MidiState.INITIALIZING -> Color(0xFFFFC107) // Yellow/Amber
+        MidiState.NOT_SUPPORTED, MidiState.PERMISSION_DENIED, MidiState.ERROR -> Color(0xFFF44336) // Red
+        MidiState.NOT_INITIALIZED -> Color(0xFF9E9E9E) // Gray
+    }
+    
+    Box(
+        modifier = Modifier
+            .size(10.dp)
+            .clip(CircleShape)
+            .background(color)
+    )
+}
+
+/**
+ * Individual MIDI device row with enable/disable toggle
+ */
+@Composable
+private fun MidiDeviceRow(
+    device: MidiDeviceInfo,
+    isEnabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .clickable { onToggle(!isEnabled) }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Connection status dot
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (device.isConnected) Color(0xFF4CAF50) else Color(0xFF9E9E9E)
+                        )
+                )
+                
+                Text(
+                    text = device.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
+            if (device.manufacturer.isNotBlank() && device.manufacturer != "Unknown") {
+                Text(
+                    text = device.manufacturer,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(start = 16.dp)
+                )
+            }
+        }
+        
+        Checkbox(
+            checked = isEnabled,
+            onCheckedChange = onToggle,
+            colors = CheckboxDefaults.colors(
+                checkedColor = MaterialTheme.colorScheme.primary,
+                uncheckedColor = MaterialTheme.colorScheme.outline
+            )
+        )
     }
 }
